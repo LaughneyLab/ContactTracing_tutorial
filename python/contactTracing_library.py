@@ -16,11 +16,17 @@ import glob
 import seaborn as sns
 import csv
 
-## run command in background. If wait=False, run in background and return immediately.
-## If stderrfile='', stderr goes to same place as stdout
-## If force=False and stdoutfile already exists, do not run again
 def run_in_background(command, stdoutfile, stderrfile="",
-                      force=True, quiet=False, wait=False):
+                      force=True, wait=False, quiet=False):
+    """Run a system command 
+    :param command: A string with the command to run
+    :param stdoutfile: A string with file name where stdout will be written
+    :param stderrfile: A string with file name where stderr will be written. If "", then combine stdout/stderr to stdoutfile
+    :param force: If False, do not run command if stdoutfile already exists. If True, command will be run and stdoutfile will be overwritten (if it already exists)
+    :param wait: If True, then function will not return until command is finished running. Otherwise, the function will issue the command to run in the background and then return.
+    :param quiet: If False, print contents of stdoutfile and stderrfile to console after command is finished (only if wait=True)
+    :return: None
+    """
     if force or not os.path.exists(stdoutfile):
         command = 'bash -c \'' + command + '\' > ' + stdoutfile
         if stderrfile:
@@ -43,35 +49,69 @@ def run_in_background(command, stdoutfile, stderrfile="",
             
 CM_DIVERGING = plt.cm.RdBu_r
 
-def color_to_str(col, alpha=1):
+def hexcolor_to_circos(col, alpha=1):
+    """Convert hex color string to circos-formatted string
+    :param color: i.e., "#F9D318"
+    :param alpha: transparency from 0-1 (0 = fully transparent)
+    :return: string like "249,211,24,0.5"
+    """
     if alpha is None:
         return(','.join(str(int(y*255)) for y in matplotlib.colors.to_rgb(col)))
     return(','.join(str(int(y*255)) for y in matplotlib.colors.to_rgb(col)) + ','+str(alpha))
 
 def rgb_to_hex(rgb):
+    """Convert rgb tuple to hex format
+    :param rgb: a 3-tuple like (1,0,0)
+    :return: A hex like "#FF0000"
+    """
     return '#%02x%02x%02x' % (int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255))
 
-def cm_to_str(val, vmin, vmax, colormap=CM_DIVERGING, alpha=1, circos=False):
+def cm_to_circos(vals, vmin, vmax, colormap=CM_DIVERGING, alpha=1):
+    """Convert numeric array to list of circos-formatted colors
+    :param vals: array/list of values
+    :param vmin: minimum value on color scale
+    :param vmax: maximum value on color scale
+    :param colormap: matplotlib colormap to use
+    :param alpha: transparency parameter (0-1)
+    :return: a list of color strings to used in circos plot
+    """
     norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax, clip=True)
     mapper = plt.cm.ScalarMappable(norm=norm, cmap=colormap)
-    co = mapper.to_rgba(val)
+    co = mapper.to_rgba(vals)
     if alpha is None:
         return [f'{int(x[0]*255)},{int(x[1]*255)},{int(x[2]*255)}' for x in co]    
-    if circos:
-        alpha = 1-alpha
     return [f'{int(x[0]*255)},{int(x[1]*255)},{int(x[2]*255)},{alpha}' for x in co]
 
 def cm_to_color(val, vmin, vmax, colormap=CM_DIVERGING, alpha=1):
-    x = cm_to_str([val], vmin, vmax, colormap, alpha)[0].split(',')
+    """Convert numeric value to color based on colormap
+    :param val: single numeric value
+    :param vmin: minimum value on color scale
+    :param vmax: maximum value on color scale
+    :param colormap: matplotlib colormap to use
+    :alpha: transparency parameter (0-1)
+    :return: a 4-tuple color (r,g,b,a), all values between 0-1
+    """
+    x = cm_to_circos([val], vmin, vmax, colormap, alpha)[0].split(',')
     return((int(x[0])/255, int(x[1])/255,int(x[2])/255,float(x[3])))
 
 def makeTransparent(color, alpha):
+    """Add transparency to a color string
+    :param color: A string representing a color (i.e., "gray" or "#FF0000")
+    :param alpha: Transparency value (0-1)
+    :return: A 4-tuple color (r,g,b,a), all values between 0-1
+    """
     val = matplotlib.colors.to_rgba(color)
     return((val[0], val[1], val[2], alpha))
 
             
-def read_mast_results(filename, filter_genes=None, filter_label='_filtered', reverse=False,
-                      sortBy='scaled_rank_score', quiet=False):
+def read_mast_results(filename, reverse=False, sortBy='scaled_rank_score', quiet=False):
+    """Load results created by R/MAST_wrapper.R
+    :param filename: The filename containing the results
+    :param reverse: If True, flip direction of fold-change parameters
+    :param sortBy: parameter to sort results by, should be a column of the results
+    :param quiet: If True, suppress verbose output
+    :return: data frame with columns including gene,log2FC,p,bonferroni,fdr,rank_score,scaled_rank_score
+    """
     if not quiet:
         print("Reading " + filename)
     mastResults = pd.read_csv(filename)
@@ -97,24 +137,44 @@ def read_mast_results(filename, filter_genes=None, filter_label='_filtered', rev
         mastResults['rank_score'] = -mastResults['rank_score']
         mastResults['scaled_rank_score'] = -mastResults['scaled_rank_score']
     mastResults = mastResults.sort_values(by=sortBy, ascending=False)
-    if filter_genes is not None:
-        mastResults = mastResults.loc[[g for g in mastResults.index if g in filter_genes]]
-        filename=os.path.splitext(filename)[0] + filter_label + '.csv'
-        mastResults[['p', 'log2FC', 'FC', 'fdr', 'ci.hi','ci.lo','bonferroni','rank_score', 'scaled_rank_score']].to_csv(filename)
     return(mastResults)
 
 
-def make_volcano_plot(df, title='MAST volcano plot', plot_outfile = None, 
-                      max_num_label=15, arrows=True,
-                      label_pval_cutoff=0.05,
-                      fontsize=12,
-                      ycol='fdr',
+def make_volcano_plot(df,
                       xcol='log2FC',
+                      ycol='fdr',
+                      label_col='index', 
+                      title='MAST volcano plot',
                       xlabel='$log_2(FC)$',
                       ylabel='$-log{10}(p_{adj})$',
-                     label_col='index', s=5, label_filter=None,
-                     label_sort_col='abs_scaled_rank_score',
-                     label_sort_ascending=False):
+                      plot_outfile=None, 
+                      max_num_label=15,
+                      arrows=True,
+                      label_pval_cutoff=0.05,
+                      fontsize=12,
+                      s=5, label_filter=None,
+                      label_sort_col='abs_scaled_rank_score',
+                      label_sort_ascending=False):
+    """Volcano plot
+    :param df: pandas dataframe with columns label_col (for gene name), xcol, ycol, label_sort_col
+    :param xcol: column of df to plot along x-axis
+    :param ycol: column of df to plot along y-axis
+    :param label_col: column used for labels ('index' implies df.index)
+    :param title: title for plot
+    :param xlabel: label for x-axis
+    :param ylabel: label for y-axis
+    :param plot_outfile: If not None, will store image in this file
+    :param max_num_label: Maximum number of points on the plot to label
+    :param arrows: True/False whether to draw labels connecting gene names to points
+    :param label_pval_cutoff: Do not label any genes with ycol >= label_pval_cutoff
+    :param fontsize: font size for gene labels
+    :param s: point size
+    :param label_filter: If not None, a list of genes that may be labelled.
+    :param label_sort_col: The column of df used to determine top genes to be labelled
+    :param label_sort_ascending: If False, then genes with highest label_sort_col will be labelled. If True, genes with lowest label_sort_col will be labelled.
+    :return: None
+    """
+
     print("ycol:", ycol)
     # Identify significant genes to highlightlabelle
     
@@ -126,15 +186,15 @@ def make_volcano_plot(df, title='MAST volcano plot', plot_outfile = None,
     
     if max_num_label > 0:
         if label_filter is not None:
-            label_df = df.loc[label_filter].copy()
+            if label_col == 'index':
+                label_filter = list(set(label_filter).intersection(set(df.index)))
+                label_df = df.loc[label_filter].copy()
+            else:
+                label_df = df.loc[df[label_col].isin(label_filter)].copy()
         else:
             label_df = df.copy()
         label_df['x'] = x;
         label_df['y'] = y
-        #f = ~((df[genecol].str.lower().str.startswith('mt-')) |
-        #      (df[genecol].str.lower().str.startswith('rps')) |
-        #      (df[genecol].str.lower().str.startswith('rpl')))
-        #label_df = label_df.loc[f].sort_values(label_sort_col, ascending=label_sort_ascending)
         label_df = label_df.sort_values(label_sort_col, ascending=label_sort_ascending)
         label_df = label_df.loc[label_df[ycol] < label_pval_cutoff]
         if label_df.shape[0] > max_num_label:
@@ -191,7 +251,12 @@ def make_volcano_plot(df, title='MAST volcano plot', plot_outfile = None,
 
 # after reading in results from population/interaction test, add any untested genes with p-value 1 and logFC 0
 # and remove any genes that were tested that are not in genes
-def set_genes(df, genes):
+def __set_genes(df, genes):
+    """Internal function used by read_contactTracing_results. For efficiency purposes, 
+       we only run MAST on subset of genes that are expressed in all four categories of cells,
+       since otherwise the p-value for interaction coefficient is guaranteed to be 1.
+       This function adds the skipped genes back to the results after MAST is run.
+    """
     if genes is None:
         return(df)
     df = df.loc[df['primerid'].isin(genes)]
@@ -212,10 +277,22 @@ def set_genes(df, genes):
     
   
 
-def read_contactTracing_results(celltype_target, ct_outdir, poptest, inttest=None,
-                                cond1='lowCIN', cond2='highCIN', genes=None):  
+def read_contactTracing_results(celltype_target, ct_outdir, targettest=None, inttest=None,
+                                cond1='lowCIN', cond2='highCIN', genes=None):
+    """Read contactTracing results for single target and/or interaction test. This function is usually called in parallel by read_all_contactTracing_results.
+
+    :param celltype_target: A doublet (cellType, target) = celltype_target (target is receptor gene being tested in cell type celltype)
+    :param ct_outdir: contactTracing output directory; assumes result file is found in 
+        f'{ct_outdir}/{cellType}/{celltype_target}[1]
+    :param targettest: If the target test was run, this should be 'population_test'. Usually this is not run and the value should be None.
+    :param inttest: The name of the interaction test, usually f'interaction_{cond1}_vs_{cond2}'
+    :param cond1: condition1 name
+    :param cond2: condition2 name
+    :param genes: full list of genes tested
+    :return: An AnnData object with columns=genes, a single row representing this cell_type/receptor combination, and layers for each statistic read in from contactTracing results
+    """
     celltype, target=celltype_target
-    poptest_stats = ['coef_clusterTRUE', 'pval', 'ci.hi_clusterTRUE', 'ci.lo_clusterTRUE']
+    targettest_stats = ['coef_clusterTRUE', 'pval', 'ci.hi_clusterTRUE', 'ci.lo_clusterTRUE']
     inttest_stats = [f'coef_cluster_{cond2}TRUE',
                      f'coef_cluster_{cond1}TRUE',
                      f'coef_condition{cond1}',
@@ -224,7 +301,7 @@ def read_contactTracing_results(celltype_target, ct_outdir, poptest, inttest=Non
                      'pval']
 #                     f'ci.hi_cluster_{cond2}TRUE',
 #                     f'ci.lo_cluster_{cond2}TRUE']
-    poptest_stats_namemap = {'coef_clusterTRUE':'log2FC',
+    targettest_stats_namemap = {'coef_clusterTRUE':'log2FC',
                              'ci.hi_clusterTRUE':'log2FC.highCI',
                              'ci.lo_clusterTRUE':'log2FC.lowCI',
                             'pval':'pval.orig'}
@@ -241,13 +318,13 @@ def read_contactTracing_results(celltype_target, ct_outdir, poptest, inttest=Non
     g0 = target.replace(' ', '_').replace('/','_')
     ctdir=celltype.replace(' ', '_').replace('/','_')
     currOutDir = f'{ct_outdir}/{ctdir}'
-    t = poptest
+    t = targettest
     filename = f'{currOutDir}/{g0}/{t}.txt'.replace(' ','_')
     rv = None
     if os.path.exists(filename):
         tmp = pd.read_csv(filename, sep='\t')
         if genes is not None:
-            tmp = set_genes(tmp, genes)
+            tmp = __set_genes(tmp, genes)
         f = tmp['primerid'] == g0
         if sum(f) > 0:
             tmp.loc[f,'pval'] = 1    
@@ -255,11 +332,11 @@ def read_contactTracing_results(celltype_target, ct_outdir, poptest, inttest=Non
                obs=pd.DataFrame({'cell type':[celltype],
                                 'receptor':[target]}, index=['0']),
                var=pd.DataFrame(tmp['primerid']).set_index('primerid'))
-        for stat in poptest_stats:
+        for stat in targettest_stats:
             if stat not in tmp.columns:
                 raise Exception("Error; " + stat + "not in population test output")
-            if stat in poptest_stats_namemap:
-                statname=poptest_stats_namemap[stat]
+            if stat in targettest_stats_namemap:
+                statname=targettest_stats_namemap[stat]
             else:
                 statname=stat
             if statname in rv.layers:
@@ -274,7 +351,7 @@ def read_contactTracing_results(celltype_target, ct_outdir, poptest, inttest=Non
         if os.path.exists(filename):
             tmp = pd.read_csv(filename, sep='\t')
             if genes is not None:
-                tmp = set_genes(tmp, genes)
+                tmp = __set_genes(tmp, genes)
             if rv is None:
                 emptymat = np.empty((1,tmp.shape[0]))
                 emptymat[:] = np.nan
@@ -300,10 +377,23 @@ def read_contactTracing_results(celltype_target, ct_outdir, poptest, inttest=Non
 
 # in parallel, read contactTracing results for all cellTypes * all targets, return an anndata structure
 # with combined results
-def read_all_contactTracing_results(cellTypes, targets, ct_outdir, poptest=None, inttest=None,
+def read_all_contactTracing_results(cellTypes, targets, ct_outdir, targettest=None, inttest=None,
                                     cond1='lowCIN', cond2='highCIN', ncore=1, genes=None):
+    """Read contactTracing results for all cellType/target combinations.
+
+    :param cellTypes: A list of strings, giving the cell type names where contactTracing was run
+    :param targets: A list of target genes (receptors) where contactTracing was run
+    :param ct_outdir: contactTracing output directory; results for each cellType/target combination should be found in f'{ct_outdir}/{cellType}/{target}
+    :param targettest: If the target test was run, this should be 'population_test'. Usually this is not run and the value should be None.
+    :param inttest: The name of the interaction test, usually f'interaction_{cond1}_vs_{cond2}'
+    :param cond1: condition1 name
+    :param cond2: condition2 name
+    :param ncore: The number of cores to use to read results in parallel
+    :param genes: full list of genes tested for downstream transcriptional effects (often adata.var.index or list of HVGs)
+    :return: An AnnData object with columns=genes, and a row for each cell_type/receptor combination, and layers for each statistic read in from contactTracing results
+    """
     p = multiprocessing.Pool(processes=ncore)
-    tmpad = p.map(partial(read_contactTracing_results, ct_outdir=ct_outdir, poptest=poptest, inttest=inttest, cond1=cond1, cond2=cond2, genes=genes), 
+    tmpad = p.map(partial(read_contactTracing_results, ct_outdir=ct_outdir, targettest=targettest, inttest=inttest, cond1=cond1, cond2=cond2, genes=genes), 
                   list(product(cellTypes, targets)))
     p.close()
     idx=0
@@ -322,6 +412,18 @@ def read_all_contactTracing_results(cellTypes, targets, ct_outdir, poptest=None,
 
 
 def estimate_contactTracing_coef(deg_idx, degobs, adata, condition1, condition2, layers, genes):
+    """Estimate logFC and/or interaction statistics from contactTracing. In some cases, MAST returns
+    a significant p-value for a parameter, but the actual parameter estimate is NA. This function uses
+    counts of expressed/non-expressed genes in each condition to produce a simple estimate for these
+    parameters.  This function computes parameters for a single cellType/receptor, and is usually 
+    called in parallel by estimate_contactTracing_coefs.
+    :param deg_idx: The index of the degobs object, indicating the relevant cellType/receptor.
+    :param degobs: The 'obs' matrix of the contactTracing AnnData results structure
+    :param adata: An AnnData object representin single-cell data, which was used as input to contactTracing
+    :param condition1: condition1 (a string), same as used for contactTracing
+    :param condition2: condition2 (a string), same as used for contactTracing
+    :return: A dictionary, with one element per parameter, each element is an array of parameters
+    """
     receptor = degobs.loc[deg_idx,'receptor']
     cellType = degobs.loc[deg_idx,'cell type']
     receptorIdx = np.where(adata.var.index == receptor)[0][0]
@@ -357,6 +459,18 @@ def estimate_contactTracing_coef(deg_idx, degobs, adata, condition1, condition2,
 
 
 def estimate_contactTracing_coefs(deg, adata, condition1, condition2, ncores=1, chunksize=50):
+    """Estimate logFC and/or interaction statistics from contactTracing. In some cases, MAST returns
+    a significant p-value for a parameter, but the actual parameter estimate is NA. This function uses
+    counts of expressed/non-expressed genes in each condition to produce a simple estimate for these
+    parameters.   
+    :param deg: The AnnData object returned by read_all_contactTracing_results
+    :param adata: An AnnData object representin single-cell data, which was used as input to contactTracing
+    :param condition1: condition1 (a string), same as used for contactTracing
+    :param condition2: condition2 (a string), same as used for contactTracing
+    :param ncores: Number of cores to use to parallelize computations
+    :param chunksize: How many jobs to give to each core at time. Each job is a receptor/celltype combination (one row of deg).
+    :return: None, but new layers are added to deg, with the suffix '_est', representing estimated parameters
+    """
 
     possible_layers = ['coef_cluster',
                        f'coef_{condition1}', f'coef_{condition2}',
@@ -410,6 +524,19 @@ def gsea_logistic_scale(data: pd.Series) -> pd.Series:
     
 def run_gsea(rank, output_root, gmtfile, fdr_cutoff=0.25, label='GSEA run', force=False, wait=False,
              return_command_only=False, readonly=False, gene_map=None):
+    """Run GSEA
+    :param rank: pd.Series object with score for each gene
+    :param output_root: Directory output
+    :param gmtfile: Path to GMT file
+    :param fdr_cutoff: If returning results, only return results with fdr < fdr_cutoff
+    :param label: Name to use (results will be in f'{output_dir}/{label}.csv'. Spaces will be replaced by underscores.
+    :param force: If True, run GSEA even if results file already exists.
+    :param wait: If True, wait for GSEA to finish running, and return results. Otherwise, start GSEA running, and return None.
+    :param return_command_only: If True, return the command to run GSEA on command-line. Otherwise, run the command from the function.
+    :param readonly: If True, do not run the command, just read results (from previously run commands).
+    :param gene_map: If not None, this should be a dictionary used to convert gene names in rank to gene names in the GMT file. (i.e. to convert between different species gene names). If gene_map is given, it assumes that we are converting to human gene names (all caps) and converts all gene names to all caps, unless the gene mapping is specified in gene_map. If gene_map is None, the given gene names in rank are used and assumed to match with those in the GMT file.
+    :return: data frame with GSEA Results
+    """
     label = label.replace(" ", "_")
     
     # look to see if output folder already exists
@@ -482,6 +609,13 @@ def run_gsea(rank, output_root, gmtfile, fdr_cutoff=0.25, label='GSEA run', forc
 
 
 def plot_gsea_results(gr, fdr_cutoff=0.25, plot_outfile=None, title='', remove_strings=None):
+    """GSEA plot
+    :param gr: GSEA results (data frame returned by run_gsea function)
+    :param fdr_cutoff: Only plot results with fdr < fdr_cutoff
+    :param plot_outfile: If given, save plot to this file
+    :param title: Title for plot
+    :param remove_strings: can be a list of strings, any gene set names that contain any of these strins will not be plotted.
+    """
     if gr.shape[0] == 0:
         print("No data")
         return
@@ -564,8 +698,8 @@ def plot_gsea_results(gr, fdr_cutoff=0.25, plot_outfile=None, title='', remove_s
     sns.set(font_scale = 1)
 
 
-def make_circos_conf_file(outdir, target_stats, heatmap_plots, histogram_plots,
-                           cellType_order=[], cellType_labels=True):
+def __make_circos_conf_file(outdir, target_stats, heatmap_plots, histogram_plots,
+                            cellType_order=[], cellType_labels=True):
 
     f = open(f'{outdir}/circos.conf', 'w')
     cellTypes = target_stats['cell type'].unique()
@@ -697,9 +831,6 @@ def make_circos_conf_file(outdir, target_stats, heatmap_plots, histogram_plots,
     f.close()
     print(f'Wrote {outdir}')
 
-        
-    
-
 
 #  if celltype specified, only draw links and labels for that celltype
 # if inttype specified, only draw links and labels for that interactino type (ligand or receptor). inttype only applies if
@@ -713,6 +844,8 @@ def make_circos_plot(interactions,
                      target_stats,
                      outdir,
                      numSigI1_stat='numSigI1_fdr05',
+                     ligand_deg_logfc_col='log2FC',
+                     ligand_deg_pval_col='fdr',
                      links_min_numSigI1=1,
                      links_max_ligand_fdr=0.05,
                      links_min_ligand_absLog2FC=0,
@@ -724,8 +857,6 @@ def make_circos_plot(interactions,
                      bigFontSize=24,
                      max_thickness=25,
                      max_numSigI1=None,
-                     ligand_deg_logfc_col='log2FC',
-                     ligand_deg_pval_col='fdr',
                      boldLigand=True,
                      boldReceptor=False,
                      boldGenes=None,
@@ -733,7 +864,33 @@ def make_circos_plot(interactions,
                      log2FC_vmax=0.2,
                      colorMap=None,
                      cellType_labels=True):
-
+    """Circos plot
+    :param interactions: Data frame with all ligand/receptor interactions, should have a column 'receptor' and a column 'ligand'
+    :param target_stats: Data frame with row for every receptor/ligand x cellType combination, should have a column 'target' giving the gene name, 'cellType' with the cell type, columns 'receptor' and 'ligand' that are True/False depending on whether the row represents a ligand or receptor (they can both be True if target is both). Should also have a column for all statistics relevant for plotting (numSigI1_stat, any entry in heatmap_plots or histogram_plots, ligand_deg_logfc_col, ligand_Deg_pval_col).
+    :param outdir: output directory where circos plots and files will be written
+    :param numSigI1_stat: The name of the column in target_stats that decribes the size of the interaction effect in receptors (it may be undefined for ligands). 
+    :params ligand_deg_logfc_col: The column in target_stats that defines the log2FC of the ligand in the relevant cell type. It does not need to be defined for receptors.
+    :params ligand_deg_pval_col: The column in target_stats that gives the p-value (or adjusted p-value) that the ligand is differentially expressed between conditions in the relevant cell type
+    :param links_min_numSigI1: The miniumum numSigI1_stat value a receptor needs for a link to be drawn
+    :param links_max_ligand_fdr: The maximum fdr statistic that a ligand needs for a link to be drawn
+    :param links_min_ligand_absLog2FC: The minimum abs(log2FC) that a ligand needs for a link to be drawn
+    :param order_col: The column in target_stats used to order ligands/receptors within a cell type
+    :param heatmap_plots: The statistics in target_stats that should be drawn in concentric heatmaps along the outside of the plot
+    :param histogram_plots: The statistics in target_stats that should be drawn as concentric histograms along the circos plot
+    :param cellType_order: The order that cell types should be drawn around the plot. If an empty list or any cell types are not in this list, the order will be arbitrary.
+    :param bigGenes: Genes that should be labeled with a large font, if links are drawn to them
+    :param bigFontSize: The font size to use for bigGenes
+    :param max_thickness: The maximum thickness of a link
+    :param max_numSigI1: If given, then any links with numSigI1 > max_numSigI1 will be drawn with the same maximum thickness
+    :param boldLigand: If True, then the font for ligands will be bold
+    :param boldReceptor: If True, then the font for receptors will be bold
+    :param boldGenes: This can be a list of genes which should be labelled with bold font
+    :param boldCellType: If given, only use bold font for this cell type
+    :param log2FC_vmax: The maximum value for ligand color scale. Also implies lo2FC_vmin=-log2FC_vmax.
+    :param colorMap: Dictionary defining colors to use for each cell type
+    :param cellType_labels: If False, do not draw labels for each cell type.
+    :return: Within outdir, there should be a file circos.png, as well as summary files circle_plot_tabular.tsv and links_tabular.tsv which describe the plot and links.
+    """
     target_stats.loc[target_stats['receptor'],'type'] = 'receptor'
     target_stats.loc[target_stats['ligand'],'type'] = 'ligand'
     target_stats['type'] = pd.Categorical(target_stats['type'], categories=['receptor', 'ligand', 'both'])
@@ -792,7 +949,7 @@ def make_circos_plot(interactions,
     kary['label'] = kary.index
     kary['id'] = [x.replace(' ', '_').replace('/','_').replace('\n', '_').lower() for x in kary['label']]
     kary['start'] = 0
-    kary['color'] = [color_to_str(colorMap[i], alpha=None) for i in kary['label']]
+    kary['color'] = [hexcolor_to_circos(colorMap[i], alpha=None) for i in kary['label']]
     for chrom in target_stats['chr'].value_counts().index:
         startIdx=0
         f = (target_stats['chr'] == chrom)
@@ -808,7 +965,7 @@ def make_circos_plot(interactions,
     target_stats['parent'] = [x.replace(' ','_').replace('/', '_').lower() for x in target_stats['chr']]
     target_stats['parent'] = [x.replace(' ','_').replace('/', '_').lower() for x in target_stats['chr']]
     target_stats['label'] = target_stats['target']
-    target_stats['color'] = [color_to_str(colorMap[i], alpha=None) for i in target_stats['cell type']]
+    target_stats['color'] = [hexcolor_to_circos(colorMap[i], alpha=None) for i in target_stats['cell type']]
     target_stats['id'] = [x.replace(' ','_').replace('/', '_').lower() for x in target_stats['cell type'].astype(str) +
                          '_' + target_stats['type'].astype(str) + '_' + target_stats['target'].astype(str)]
     target_stats['col1'] = 'band'
@@ -895,7 +1052,7 @@ def make_circos_plot(interactions,
         maxDEG = max_numSigI1
     links['thickness'] = (links[f'{numSigI1_stat}_x']/maxDEG*max_thickness+1).apply(np.int64)
     links.loc[links['thickness'] > max_thickness, 'thickness'] = int(max_thickness)
-    links['color'] = cm_to_str(links['newScore2'], colormap=plt.cm.bwr, vmin=-log2FC_vmax, vmax=log2FC_vmax , alpha=0.5)
+    links['color'] = cm_to_circos(links['newScore2'], colormap=plt.cm.bwr, vmin=-log2FC_vmax, vmax=log2FC_vmax , alpha=0.5)
     links['z'] = (links['newScore2']/np.max(np.abs(links['newScore2']))*1000+1).apply(np.int64)
     links['z'] =  links['z'] - np.min(links['z'])
     links['format'] = 'color=' + links['color'] + ',fill_color=' + links['color'] + ',thickness=' + links['thickness'].astype(str) + ',z=' + links['z'].astype(str)
@@ -934,7 +1091,7 @@ def make_circos_plot(interactions,
     cols=['cell type', 'target', 'type', ligand_deg_logfc_col, ligand_deg_pval_col, numSigI1_stat]
     target_stats[cols].to_csv(f'{outdir}/circle_plot_tabular.tsv', sep='\t', index=False)
 
-    make_circos_conf_file(outdir, target_stats, heatmap_plots, histogram_plots, cellType_order, cellType_labels)
+    __make_circos_conf_file(outdir, target_stats, heatmap_plots, histogram_plots, cellType_order, cellType_labels)
     cmd=f'cd {outdir} && /opt/circos-0.69-9/bin/circos -debug_group textplace -conf circos.conf > circos_stdout.txt 2>&1'
     os.system(cmd)
 
