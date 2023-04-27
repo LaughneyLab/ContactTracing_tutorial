@@ -829,7 +829,7 @@ def __make_circos_conf_file(outdir, target_stats, heatmap_plots, histogram_plots
     f.write('<<include etc/housekeeping.conf>>\n')
 
     f.close()
-    print(f'Wrote {outdir}')
+    print(f'Wrote {outdir}/circos.conf')
 
 
 #  if celltype specified, only draw links and labels for that celltype
