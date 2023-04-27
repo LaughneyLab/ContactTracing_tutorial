@@ -51,7 +51,7 @@ if (is.null(counts)) {
 
 
 ## given h5ad anndata file, return given column from adata.obs
-readObsFromh5File <- function(infile, colname) {
+readObsFromh5File <- function(infile, colname, errorOK=FALSE) {
     tmp <- h5ls(infile)
     w <- which(tmp$name == colname & tmp$otype=="H5I_DATASET")
     if (length(w) == 1) {
@@ -67,6 +67,7 @@ readObsFromh5File <- function(infile, colname) {
         w2 <- which(tmp[w,]$name == "codes")
         return(catNames[as.numeric(h5read(infile, sprintf("%s/%s", tmp[w,][w2, "group"], tmp[w,][w2, "name"])))+1])
     }
+    if (errorOK) return(NULL)
     stop("Error reading ", colname, " from ", infile)
 }
 
@@ -98,9 +99,9 @@ covariates <- list()
 if (!is.null(args$covariates)) {
     covariateList <- strsplit(args$covariates, ",")[[1]]
     for (v in covariateList) {
-        if (v != "cngeneson") {
-            covariates[[v]] <- readObsFromh5File(infile, v)[keep]
-        } else {
+        covariates[[v]] <- readObsFromh5File(infile, v, errorOK=(v=="cngeneson"))[keep]
+        if (v == "cngeneson" && is.null(covariates[[v]])) {
+            cat("cngeneson not found... computing from counts\n")
             covariates[[v]] <- scale(colSums(counts > 0))
         }
         cat("Using", v, "as a covariate\n")
