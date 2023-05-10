@@ -278,7 +278,7 @@ def __set_genes(df, genes):
   
 
 def read_contactTracing_results(celltype_target, ct_outdir, targettest=None, inttest=None,
-                                cond1='lowCIN', cond2='highCIN', genes=None):
+                                cond1='lowCIN', cond2='highCIN', genes=None, return_all_stats=False):
     """Read contactTracing results for single target and/or interaction test. This function is usually called in parallel by read_all_contactTracing_results.
 
     :param celltype_target: A doublet (cellType, target) = celltype_target (target is receptor gene being tested in cell type celltype)
@@ -289,6 +289,7 @@ def read_contactTracing_results(celltype_target, ct_outdir, targettest=None, int
     :param cond1: condition1 name
     :param cond2: condition2 name
     :param genes: full list of genes tested
+    :param return_all_stats: If TRUE, the return value will have a layer for every statistic returned by MAST, including confidence intervals and every covariate coefficient. Otherwise, will only return covariate coefficients for the condition, cluster, and interaction covariates.
     :return: An AnnData object with columns=genes, a single row representing this cell_type/receptor combination, and layers for each statistic read in from contactTracing results
     """
     celltype, target=celltype_target
@@ -332,6 +333,10 @@ def read_contactTracing_results(celltype_target, ct_outdir, targettest=None, int
                obs=pd.DataFrame({'cell type':[celltype],
                                 'receptor':[target]}, index=['0']),
                var=pd.DataFrame(tmp['primerid']).set_index('primerid'))
+        if return_all_stats:
+            for c in tmp.columns[1:]:
+                if c not in set(target_stats):
+                    targettest_stats.append(c)
         for stat in targettest_stats:
             if stat not in tmp.columns:
                 raise Exception("Error; " + stat + "not in population test output")
@@ -359,6 +364,10 @@ def read_contactTracing_results(celltype_target, ct_outdir, targettest=None, int
                                                                    'receptor':[target]}, index=['0']),
                                      var=pd.DataFrame(tmp['primerid']).set_index('primerid'))
             tmp = tmp.set_index('primerid').loc[rv.var.index]
+            if return_all_stats:
+                for c in tmp.columns[1:]:
+                    if c not in set(inttest_stats):
+                        inttest_stats.append(c)
             for stat in inttest_stats:
                 if stat not in tmp.columns:
                     continue  # just read the ones we find
@@ -378,7 +387,8 @@ def read_contactTracing_results(celltype_target, ct_outdir, targettest=None, int
 # in parallel, read contactTracing results for all cellTypes * all targets, return an anndata structure
 # with combined results
 def read_all_contactTracing_results(cellTypes, targets, ct_outdir, targettest=None, inttest=None,
-                                    cond1='lowCIN', cond2='highCIN', ncore=1, genes=None):
+                                    cond1='lowCIN', cond2='highCIN', ncore=1, genes=None,
+                                    return_all_stats=False):
     """Read contactTracing results for all cellType/target combinations.
 
     :param cellTypes: A list of strings, giving the cell type names where contactTracing was run
@@ -390,10 +400,11 @@ def read_all_contactTracing_results(cellTypes, targets, ct_outdir, targettest=No
     :param cond2: condition2 name
     :param ncore: The number of cores to use to read results in parallel
     :param genes: full list of genes tested for downstream transcriptional effects (often adata.var.index or list of HVGs)
+    :param return_all_stats: If TRUE, the return value will have a layer for every statistic returned by MAST, including confidence intervals and every covariate coefficient. Otherwise, will only return covariate coefficients for the condition, cluster, and interaction covariates.
     :return: An AnnData object with columns=genes, and a row for each cell_type/receptor combination, and layers for each statistic read in from contactTracing results
     """
     p = multiprocessing.Pool(processes=ncore)
-    tmpad = p.map(partial(read_contactTracing_results, ct_outdir=ct_outdir, targettest=targettest, inttest=inttest, cond1=cond1, cond2=cond2, genes=genes), 
+    tmpad = p.map(partial(read_contactTracing_results, ct_outdir=ct_outdir, targettest=targettest, inttest=inttest, cond1=cond1, cond2=cond2, genes=genes, return_all_stats=return_all_stats), 
                   list(product(cellTypes, targets)))
     p.close()
     idx=0
