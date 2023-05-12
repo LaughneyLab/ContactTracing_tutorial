@@ -121,7 +121,7 @@ writeResults <- function(outdir, gene, testname, zt, zlr=NULL) {
   invisible(df)
 }
 
-testname <- sprintf("interaction_%s_vs_%s",args$conditions[1], args$condition[2])
+testname <- sprintf("interaction_%s_vs_%s",args$conditions[1], args$conditions[2])
 for (gene in genes) {
     cat("Running interaction test on", gene, "expression\n")
     results <- list()
@@ -147,17 +147,18 @@ for (gene in genes) {
     if (doskip) {
         next
     }
-    clusterName <- sprintf("cluster_%s", args$condition[1])
-    colData(sca)[,clusterName] <- factor(isExpressed & conditions==args$condition[1], levels=c(FALSE, TRUE))
+    clusterName <- sprintf("cluster_%s", args$conditions[1])
+    colData(sca)[,clusterName] <- factor(isExpressed & conditions==args$conditions[1], levels=c(FALSE, TRUE))
+    colData(sca)[,args$conditions[2]] <- factor(conditions == args$conditions[2], levels=c(FALSE, TRUE))
     outfile <- sprintf("%s/%s/%s.txt", outdir, gene, testname)
     if (file.exists(outfile) && !force) {
         cat("Skipping gene", gene, "... outfile", outfile, "already exists\n")
         next
     }
-    group1 <- (conditions == args$condition[1]) & isExpressed
-    group2 <- (conditions == args$condition[1]) & (!isExpressed)
-    group3 <- (conditions == args$condition[2]) & isExpressed
-    group4 <- (conditions == args$condition[2]) & (!isExpressed)
+    group1 <- (conditions == args$conditions[1]) & isExpressed
+    group2 <- (conditions == args$conditions[1]) & (!isExpressed)
+    group3 <- (conditions == args$conditions[2]) & isExpressed
+    group4 <- (conditions == args$conditions[2]) & (!isExpressed)
               
     count1 <- apply(counts[,group1,drop=FALSE] > 0, 1, sum)
     count2 <- apply(counts[,group2,drop=FALSE] > 0, 1, sum)
@@ -175,15 +176,15 @@ for (gene in genes) {
         next
     }
               
-    cat("counts:", sum(isExpressed), sum(!isExpressed), sum(conditions==args$condition[1]), sum(conditions==args$condition[2]), "\n")
+    cat("counts:", sum(isExpressed), sum(!isExpressed), sum(conditions==args$conditions[1]), sum(conditions==args$conditions[2]), "\n")
     print(table(isExpressed[is.element(conditions, args$conditions)], conditions[is.element(conditions, args$conditions)]))
-    if (sum(isExpressed & conditions == args$condition[2]) == 0) {
+    if (sum(isExpressed & conditions == args$conditions[2]) == 0) {
         cat("No expressed/condition2... skipping\n")
         next
     }
     t1 <- Sys.time()
     print(t1)
-    zlmstr <- sprintf("~condition + cluster + %s", clusterName)
+    zlmstr <- sprintf("~%s + cluster + %s", args$conditions[2], clusterName)
     for (v in names(covariates)) {
         zlmstr <- sprintf("%s + %s", zlmstr, v)
     }
