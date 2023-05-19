@@ -873,7 +873,10 @@ def make_circos_plot(interactions,
                      boldCellType=None,
                      log2FC_vmax=0.2,
                      colorMap=None,
-                     cellType_labels=True):
+                     cellType_labels=True,
+                     cellType_filter=None,
+                     cellType_filter_receptor=None,
+                     cellType_filter_ligand=None):
     """Circos plot
     :param interactions: Data frame with all ligand/receptor interactions, should have a column 'receptor' and a column 'ligand'
     :param target_stats: Data frame with row for every receptor/ligand x cellType combination, should have a column 'target' giving the gene name, 'cellType' with the cell type, columns 'receptor' and 'ligand' that are True/False depending on whether the row represents a ligand or receptor (they can both be True if target is both). Should also have a column for all statistics relevant for plotting (numSigI1_stat, any entry in heatmap_plots or histogram_plots, ligand_deg_logfc_col, ligand_Deg_pval_col).
@@ -899,6 +902,9 @@ def make_circos_plot(interactions,
     :param log2FC_vmax: The maximum value for ligand color scale. Also implies lo2FC_vmin=-log2FC_vmax.
     :param colorMap: Dictionary defining colors to use for each cell type
     :param cellType_labels: If False, do not draw labels for each cell type.
+    :param cellType_filter: If not None, only show links connected to this cell type. Can be single cell type (string) or list of cellTypes.
+    :param cellType_filter_receptor: If not None, show only links where receptor is this cell type. Can be single cell type (string) or list of cellTypes.
+    :param cellType_filter_ligand: If not None, show only links where ligand is this cell type. Can be single cell type (string) or list of cellTypes.
     :return: Within outdir, there should be a file circos.png, as well as summary files circle_plot_tabular.tsv and links_tabular.tsv which describe the plot and links.
     """
     target_stats.loc[target_stats['receptor'],'type'] = 'receptor'
@@ -1000,6 +1006,23 @@ def make_circos_plot(interactions,
     links = links.loc[~f]
     for col in ['start_x', 'end_x', 'start_y', 'end_y']:
         links[col] = links[col].astype(np.int64)
+
+    if cellType_filter is not None:
+        if type(cellType_filter) == str:
+            cellType_filter=[cellType_filter]
+        links = links.loc[(links['cell type_x'].isin(cellType_filter)) |
+                          (links['cell type_y'].isin(cellType_filter))]
+
+    if cellType_filter_receptor is not None:
+        if type(cellType_filter_receptor) == str:
+            cellType_filter_receptor=[cellType_filter_receptor]
+        links = links.loc[links['cell type_x'].isin(cellType_filter_receptor)]
+
+    if cellType_filter_ligand is not None:
+        if type(cellType_filter_ligand) == str:
+            cellType_filter_ligand=[cellType_filter_ligand]
+        links = links.loc[links['cell type_y'].isin(cellType_filter_ligand)]
+        
     print('Number of links: :', links.shape[0])
 
     # labels filter
