@@ -298,7 +298,7 @@ def read_contactTracing_results(celltype_target, ct_outdir, targettest=None, int
                      f'coef_condition{cond1}',
                      f'coef_condition{cond2}',
                      f'coef_{cond1}TRUE',
-                     'coef_{cond2}TRUE',
+                     f'coef_{cond2}TRUE',
                      'coef_clusterTRUE',
                      'pval']
 #                     f'ci.hi_cluster_{cond2}TRUE',
