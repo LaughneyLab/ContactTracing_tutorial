@@ -102,3 +102,21 @@ def determine_multiscale_space(dm_res, n_eigs=None):
     data = pd.DataFrame(data, index=dm_res["EigenVectors"].index)
 
     return data
+
+
+def run_magic_imputation(data, dm_res, n_steps=3):
+    """Run MAGIC imputation
+
+    :param dm_res: Diffusion map results from run_diffusion_maps
+    :param n_steps: Number of steps in the diffusion operator
+    :return: Imputed data matrix
+    """
+    if type(data) is sc.AnnData:
+        data = pd.DataFrame(data.X.todense(), index=data.obs_names, columns=data.var_names)
+
+    T_steps = dm_res["T"] ** n_steps
+    imputed_data = pd.DataFrame(
+        np.dot(T_steps.todense(), data), index=data.index, columns=data.columns
+    )
+
+    return imputed_data
