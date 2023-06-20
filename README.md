@@ -1,3 +1,8 @@
+
+
+[![DOI](https://zenodo.org/badge/625036312.svg)](https://zenodo.org/badge/latestdoi/625036312)
+
+
 # ContactTracing_tutorial
 
 This repository contains a jupyter notebook and scripts to take you through an example ContactTracing analysis.
