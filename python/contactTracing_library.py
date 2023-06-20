@@ -155,8 +155,8 @@ def make_volcano_plot(df,
                       fontsize=12,
                       s=5, label_filter=None,
                       label_sort_col='abs_scaled_rank_score',
-                      label_sort_ascending=False, **adjust_text_args):
-                      show=True):
+                      label_sort_ascending=False, show=True, 
+                      **adjust_text_args):
     """Volcano plot
     :param df: pandas dataframe with columns label_col (for gene name), xcol, ycol, label_sort_col
     :param xcol: column of df to plot along x-axis
@@ -174,8 +174,8 @@ def make_volcano_plot(df,
     :param label_filter: If not None, a list of genes that may be labelled.
     :param label_sort_col: The column of df used to determine top genes to be labelled
     :param label_sort_ascending: If False, then genes with highest label_sort_col will be labelled. If True, genes with lowest label_sort_col will be labelled.
-    :param adjust_text_args: additional args to pass to adjust_text
     :param show: If True, call plt.show() at end of function
+    :param adjust_text_args: additional args to pass to adjust_text
     :return: None
     """
 
