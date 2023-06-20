@@ -154,7 +154,7 @@ def make_volcano_plot(df,
                       fontsize=12,
                       s=5, label_filter=None,
                       label_sort_col='abs_scaled_rank_score',
-                      label_sort_ascending=False):
+                      label_sort_ascending=False, **adjust_text_args):
     """Volcano plot
     :param df: pandas dataframe with columns label_col (for gene name), xcol, ycol, label_sort_col
     :param xcol: column of df to plot along x-axis
@@ -172,6 +172,7 @@ def make_volcano_plot(df,
     :param label_filter: If not None, a list of genes that may be labelled.
     :param label_sort_col: The column of df used to determine top genes to be labelled
     :param label_sort_ascending: If False, then genes with highest label_sort_col will be labelled. If True, genes with lowest label_sort_col will be labelled.
+    :param adjust_text_args: additional args to pass to adjust_text
     :return: None
     """
 
@@ -215,8 +216,8 @@ def make_volcano_plot(df,
     plt.ylabel(ylabel, size=14, weight='normal')
     maxX = np.nanmax(np.abs(x))
     maxY = np.nanmax(y)
-    plt.xlim(-maxX, maxX)
-    plt.ylim(-1, maxY)
+    plt.xlim(-maxX*1.01, maxX*1.01)
+    plt.ylim(-maxY*0.01, maxY*1.01)
 #    plt.grid(b=None)
 #    sns.despine()
     ax=plt.gca()
@@ -233,8 +234,8 @@ def make_volcano_plot(df,
             texts.append(ax.text(i[1], i[0], i[2], fontsize=fontsize))
         if (arrows):
             niter=adjust_text(texts, x=x, y=y, 
-                              precision=0.001,
-                              arrowprops=dict(arrowstyle='-|>', color='gray', lw=0.5))
+                              arrowprops=dict(arrowstyle='-|>', color='gray', lw=0.5),
+                              **adjust_text_args)
         else:
             niter = adjust_text(texts, x=x, y=y, force_text=0.05)
 
