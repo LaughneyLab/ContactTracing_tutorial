@@ -15,6 +15,7 @@ from pathlib import Path
 import glob
 import seaborn as sns
 import csv
+import subprocess
 
 def run_in_background(command, stdoutfile, stderrfile="",
                       force=True, wait=False, quiet=False):
@@ -154,7 +155,8 @@ def make_volcano_plot(df,
                       fontsize=12,
                       s=5, label_filter=None,
                       label_sort_col='abs_scaled_rank_score',
-                      label_sort_ascending=False):
+                      label_sort_ascending=False,
+                      show=True):
     """Volcano plot
     :param df: pandas dataframe with columns label_col (for gene name), xcol, ycol, label_sort_col
     :param xcol: column of df to plot along x-axis
@@ -172,6 +174,7 @@ def make_volcano_plot(df,
     :param label_filter: If not None, a list of genes that may be labelled.
     :param label_sort_col: The column of df used to determine top genes to be labelled
     :param label_sort_ascending: If False, then genes with highest label_sort_col will be labelled. If True, genes with lowest label_sort_col will be labelled.
+    :param show: If True, call plt.show() at end of function
     :return: None
     """
 
@@ -246,7 +249,8 @@ def make_volcano_plot(df,
             os.makedirs(d)
         plt.savefig(plot_outfile, bbox_inches='tight', dpi=300)
         print("Wrote " + plot_outfile)
-    plt.show()
+    if show:
+        plt.show()
 
 
 # after reading in results from population/interaction test, add any untested genes with p-value 1 and logFC 0
@@ -709,7 +713,8 @@ def plot_gsea_results(gr, fdr_cutoff=0.25, plot_outfile=None, title='', remove_s
 
 
 def __make_circos_conf_file(outdir, target_stats, heatmap_plots, histogram_plots,
-                            cellType_order=[], cellType_labels=True):
+                            cellType_order=[], cellType_labels=True, label_size=40,
+                            label_parallel='yes'):
 
     f = open(f'{outdir}/circos.conf', 'w')
     cellTypes = target_stats['cell type'].unique()
@@ -754,9 +759,9 @@ def __make_circos_conf_file(outdir, target_stats, heatmap_plots, histogram_plots
     else:
         f.write('show_label = no\n')
     f.write('label_font = default\n')
-    f.write('label_radius = 1.1r\n')
-    f.write('label_size = 40\n')
-    f.write('label_parallel = yes\n')
+    f.write('label_radius = 1.05r\n')
+    f.write(f'label_size = {label_size}\n')
+    f.write(f'label_parallel = {label_parallel}\n')
     f.write('label_with_tag = no\n')
     f.write('label_format = eval(replace(replace(var(label), "ligand", "\\nligand"), " receptor", "\\nreceptor"))\n')
     f.write('label_center = yes\n')
@@ -876,7 +881,12 @@ def make_circos_plot(interactions,
                      cellType_labels=True,
                      cellType_filter=None,
                      cellType_filter_receptor=None,
-                     cellType_filter_ligand=None):
+                     cellType_filter_ligand=None,
+                     cleanCellTypes=True,
+                     title=None,
+                     titleSize=60,
+                     labelSize=40,
+                     labelParallel='yes'):
     """Circos plot
     :param interactions: Data frame with all ligand/receptor interactions, should have a column 'receptor' and a column 'ligand'
     :param target_stats: Data frame with row for every receptor/ligand x cellType combination, should have a column 'target' giving the gene name, 'cellType' with the cell type, columns 'receptor' and 'ligand' that are True/False depending on whether the row represents a ligand or receptor (they can both be True if target is both). Should also have a column for all statistics relevant for plotting (numSigI1_stat, any entry in heatmap_plots or histogram_plots, ligand_deg_logfc_col, ligand_Deg_pval_col).
@@ -905,6 +915,11 @@ def make_circos_plot(interactions,
     :param cellType_filter: If not None, only show links connected to this cell type. Can be single cell type (string) or list of cellTypes.
     :param cellType_filter_receptor: If not None, show only links where receptor is this cell type. Can be single cell type (string) or list of cellTypes.
     :param cellType_filter_ligand: If not None, show only links where ligand is this cell type. Can be single cell type (string) or list of cellTypes.
+    :param title: If not None, add this title to image
+    :param titleSize: pointsize to use for title
+    :param labelSize: pointsize for cell type labels
+    :param labelParallel: should cell type labels be parallel to circle? Should be 'yes' (default) or 'no'
+    :param cleanCellTypes: If True, remove cell types from plot that do not have any links
     :return: Within outdir, there should be a file circos.png, as well as summary files circle_plot_tabular.tsv and links_tabular.tsv which describe the plot and links.
     """
     target_stats.loc[target_stats['receptor'],'type'] = 'receptor'
@@ -930,9 +945,12 @@ def make_circos_plot(interactions,
     # remove cell types that don't have any labeled interactions
     labf = degMetaAll['labeled0']
     allCellTypes = set(target_stats['cell type'])
-    keepCellTypes = set(degMetaAll.loc[labf,'cell type']).union(set(degMetaAll.loc[labf,'cell type_ligand']))
+    if cleanCellTypes:
+        keepCellTypes = set(degMetaAll.loc[labf,'cell type']).union(set(degMetaAll.loc[labf,'cell type_ligand']))
+    else:
+        keepCellTypes = allCellTypes
     removeCellTypes = allCellTypes.difference(keepCellTypes)
-    if (len(removeCellTypes) > 0):
+    if (len(removeCellTypes) > 0 and cleanCellTypes):
         removeStr=','.join(list(removeCellTypes))
         print(f'Removing {len(removeCellTypes)} cell Types that have no labels: {removeStr}')
     target_stats = target_stats.loc[target_stats['cell type'].isin(list(keepCellTypes))]
@@ -1088,7 +1106,7 @@ def make_circos_plot(interactions,
     links['color'] = cm_to_circos(links['newScore2'], colormap=plt.cm.bwr, vmin=-log2FC_vmax, vmax=log2FC_vmax , alpha=0.5)
     links['z'] = (links['newScore2']/np.max(np.abs(links['newScore2']))*1000+1).apply(np.int64)
     links['z'] =  links['z'] - np.min(links['z'])
-    links['format'] = 'color=' + links['color'] + ',fill_color=' + links['color'] + ',thickness=' + links['thickness'].astype(str) + ',z=' + links['z'].astype(str)
+    links['format'] = 'color=' + links['color'].astype(str) + ',fill_color=' + links['color'].astype(str) + ',thickness=' + links['thickness'].astype(str) + ',z=' + links['z'].astype(str)
     links[['parent_x', 'start_x', 'end_x', 'parent_y', 'start_y', 'end_y', 'format']].to_csv(
         f'{outdir}/links.txt', sep='\t', index=False, header=False)
     # tabular links summary
@@ -1124,7 +1142,7 @@ def make_circos_plot(interactions,
     cols=['cell type', 'target', 'type', ligand_deg_logfc_col, ligand_deg_pval_col, numSigI1_stat]
     target_stats[cols].to_csv(f'{outdir}/circle_plot_tabular.tsv', sep='\t', index=False)
 
-    __make_circos_conf_file(outdir, target_stats, heatmap_plots, histogram_plots, cellType_order, cellType_labels)
+    __make_circos_conf_file(outdir, target_stats, heatmap_plots, histogram_plots, cellType_order, cellType_labels, label_size=labelSize, label_parallel=labelParallel)
     cmd=f'cd {outdir} && /opt/circos-0.69-9/bin/circos -debug_group textplace -conf circos.conf > circos_stdout.txt 2>&1'
     os.system(cmd)
 
@@ -1136,7 +1154,22 @@ def make_circos_plot(interactions,
             not_placed = not_placed+1
         elif 'placed' in l:
             placed = placed+1
-    print('Done making circos plot {outdir}/circos.png')
+    print(f'Done making circos plot {outdir}/circos.png')
+
+    if title is not None:
+        (width,height) =subprocess.run(['identify', f'{outdir}/circos.png'], stdout=subprocess.PIPE).stdout.decode('utf-8').split(' ')[2].split('x')
+        width=int(width)
+        height=int(height)
+#        os.system(f'mv {outdir}/circos.png {outdir}/circos.1.png')
+        hpos=int(width/2 - len(title)*titleSize/4.5)
+        print(f'width={width} len(title)={len(title)} hpos={hpos}')
+        vpos=int(height/20)
+        cmd=f'convert {outdir}/circos.png -pointsize {titleSize} -fill black -annotate +{hpos}+{vpos} \'{title}\' {outdir}/circos.2.png'
+        print(cmd)
+        os.system(cmd)
+        os.system(f'rm -f {outdir}/circos.svg')
+        os.system(f'mv -f {outdir}/circos.2.png {outdir}/circos.png')
+    
     if not_placed > 0:
         print(f'WARNING: not all labels could be placed. placed={placed} notplaced={not_placed}')
     else:
