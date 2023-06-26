@@ -574,14 +574,14 @@ def run_gsea(rank, output_root, gmtfile, fdr_cutoff=0.25, label='GSEA run', forc
         else:
             rank.index = [i.upper() for i in rank.index]
         rank.to_csv(rnkFile, sep='\t', header=False, index=True)
-    cmd=f'/opt/GSEA_Linux_4.3.2/gsea-cli.sh GSEAPreranked -rnk {rnkFile} -gmx {gmtfile} -collapse No_Collapse -mode Max_probe -norm meandiv'
-    cmd += f' -nperm 10000 -scoring_scheme weighted -rpt_label {label} -create_svgs true -include_only_symbols true'
-    cmd += f' -make_sets true -plot_top_x 20 -rnd_seed 888 -set_max 1500 -set_min 1 -zip_report false -out {output_root}'
+    cmd=f'/opt/GSEA_Linux_4.3.2/gsea-cli.sh GSEAPreranked -rnk "{rnkFile}" -gmx "{gmtfile}" -collapse No_Collapse -mode Max_probe -norm meandiv'
+    cmd += f' -nperm 10000 -scoring_scheme weighted -rpt_label "{label}" -create_svgs true -include_only_symbols true'
+    cmd += f' -make_sets true -plot_top_x 20 -rnd_seed 888 -set_max 1500 -set_min 1 -zip_report false -out "{output_root}"'
     if return_command_only:
         return(cmd)
-    stdoutfile=f'{output_root}/{label}_stdout.txt'
+    stdoutfile=f'"{output_root}/{label}_stdout.txt"'
     if not readonly:
-        run_in_background(cmd,f'{output_root}/{label}_stdout.txt',  wait=wait, force=force, quiet=True)
+        run_in_background(cmd,f'"{output_root}/{label}_stdout.txt"',  wait=wait, force=force, quiet=True)
     # recover information from run
     f = glob.glob(output_root + "/**/*gsea_report*pos*tsv", recursive=True)
     #print(f, output_root + "/**/*gsea_report*pos*tsv")
