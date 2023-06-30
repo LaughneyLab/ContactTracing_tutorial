@@ -16,6 +16,7 @@ import glob
 import seaborn as sns
 import csv
 import subprocess
+from scipy.special import expit
 
 def run_in_background(command, stdoutfile, stderrfile="",
                       force=True, wait=False, quiet=False):
@@ -629,7 +630,7 @@ def plot_gsea_results(gr, fdr_cutoff=0.25, plot_outfile=None, title='', remove_s
     :param fdr_cutoff: Only plot results with fdr < fdr_cutoff
     :param plot_outfile: If given, save plot to this file
     :param title: Title for plot
-    :param remove_strings: can be a list of strings, any gene set names that contain any of these strins will not be plotted.
+    :param remove_strings: can be a list of strings, any gene set names that contain any of these strings will not be plotted.
     """
     if gr.shape[0] == 0:
         print("No data")
