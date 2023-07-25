@@ -17,7 +17,7 @@ docker pull docker.io/biohpc/scrna2023
 docker run --rm -d -v $WORKDIR:/data -p 8888:8888 docker.io/biohpc/scrna2023 /root/scripts/startJupyter.sh /data
 ```
 
-This should output a container ID (or you can retrieve it with `docker ps`). You can use this container ID to get the notebook token using the command: `docker exec -it <containerID> jupyter lab list`. This should provide the URL/token you need to log into the jupyter notebook.
+This should output a container ID (or you can retrieve it with `docker ps`). You can use this container ID to get the notebook token using the command: `docker exec <containerID> jupyter server list`. This should provide the URL/token you need to log into the jupyter notebook.
 
 Use your browser to go to this URL, or you can go to localhost:8888 and enter the token.
 
