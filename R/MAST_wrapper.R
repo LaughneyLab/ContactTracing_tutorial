@@ -118,8 +118,8 @@ fixNAs <- function(fcHurdle, cluster, clusters, geneNames, counts) {
     fixNA <- (is.na(fcHurdle$coef) & fcHurdle[,pcol] < 1)
     coefRange <- range(fcHurdle$coef, na.rm=TRUE)
     geneOrder <- sapply(fcHurdle$primerid, function(x) {which(geneNames ==x)})
-    fracIn <- apply(counts[geneOrder,clusters==cluster], 1, sum)/sum(clusters==cluster)
-    fracOut <- apply(counts[geneOrder,clusters != cluster], 1, sum)/sum(clusters!=cluster)
+    fracIn <- apply(counts[geneOrder,clusters==cluster, drop=FALSE], 1, sum)/sum(clusters==cluster)
+    fracOut <- apply(counts[geneOrder,clusters != cluster, drop=FALSE], 1, sum)/sum(clusters!=cluster)
     fcHurdle[fixNA & fracIn <= fracOut,"coef"] <- coefRange[1]
     fcHurdle[fixNA & fracIn > fracOut, "coef"] <- coefRange[2]
     fcHurdle
@@ -170,6 +170,7 @@ for (i in 1:length(clusterList)) {
     for (v in names(covariates)) {
         zlmstr <- sprintf("%s + %s", zlmstr, v)
     }
+    cat("zlmstr = ", zlmstr, "\n")
     zlmResults <- zlm(formula(zlmstr), sca)
     zt <- summary(zlmResults, doLRT=clusterName2)$datatable
     
