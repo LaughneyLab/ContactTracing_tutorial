@@ -658,9 +658,9 @@ def plot_gsea_results(gr, fdr_cutoff=0.25, plot_outfile=None, title='', remove_s
 
     tmp['fdr_q_dir'] = [tmp.fdr_q.values[x]*np.sign(tmp.nes.values[x]) for x in range(len(tmp))]
 
-    height=8
-    if tmp.shape[0] > 20:
-        height = 8*tmp.shape[0]/20
+    height=4
+    if tmp.shape[0] > 10:
+        height = 4 + 4*tmp.shape[0]/10
     if height > 20:
         height = 20
     fontscale = 1
@@ -716,7 +716,7 @@ def plot_gsea_results(gr, fdr_cutoff=0.25, plot_outfile=None, title='', remove_s
 
 def __make_circos_conf_file(outdir, target_stats, heatmap_plots, histogram_plots,
                             cellType_order=[], cellType_labels=True, label_size=40,
-                            label_parallel='yes'):
+                            label_parallel='yes', plotOptions={}):
 
     f = open(f'{outdir}/circos.conf', 'w')
     cellTypes = target_stats['cell type'].unique()
@@ -771,32 +771,47 @@ def __make_circos_conf_file(outdir, target_stats, heatmap_plots, histogram_plots
     f.write('<plots>\n')
     rstart =1
     width=0.05
+
     
     for p in heatmap_plots:
+        minval = np.nanmin(target_stats[p])
+        maxval = np.nanmax(target_stats[p])
+        if p not in plotOptions:
+            plotOptions[p] = {}
+        if 'min' not in plotOptions[p]:
+            plotOptions[p]['min'] = minval
+        if 'max' not in plotOptions[p]:
+            plotOptions[p]['max'] = maxval
+        if 'show' not in plotOptions[p]:
+            plotOptions[p]['show'] = 'yes'
         f.write('<plot>\n')
-        f.write('  show=yes\n')
         f.write('  type = heatmap\n')
         f.write('  file = ' + p + '.txt\n')
         f.write(f'  r1 = {(rstart-0.00001):0.5f}r\n')
         f.write(f'  r0 = {(rstart - width):0.5f}r\n')
+        for k in plotOptions[p].keys():
+            f.write(f' {k} = {plotOptions[p][k]}\n')
         rstart = rstart - width
-        minval = np.nanmin(target_stats[p])
-        maxval = np.nanmax(target_stats[p])
-        f.write(f'  min = {minval}\n')
-        f.write(f'  max = {maxval}\n')
         f.write(f'</plot>\n\n')
 
     width = 0.1
     for p in histogram_plots:
+        if p not in plotOptions:
+            plotOptions[p] = {}
+        if 'fill_color' not in plotOptions[p]:
+            plotOptions[p]['fill_color'] = 'black'
+        if 'orientation' not in plotOptions[p]:
+            plotOptions[p]['orientation'] = 'in'
+        if 'show' not in plotOptions[p]:
+            plotOptions[p]['show'] = 'yes'
         f.write('<plot>\n')
-        f.write('  show=yes\n')
         f.write('  type = histogram\n')
         f.write('  file = ' + p + '.txt\n')
         f.write(f'  r1 = {(rstart-0.00001):0.5f}r\n')
         f.write(f'  r0 = {(rstart - width):0.5f}r\n')
         rstart = rstart - width
-        f.write('  fill_color = black\n')
-        f.write('  orientation = in\n')
+        for k in plotOptions[p].keys():
+            f.write(f' {k} = {plotOptions[p][k]}\n')
         f.write(f'</plot>\n\n')
 
     width = 0.3
@@ -888,7 +903,8 @@ def make_circos_plot(interactions,
                      title=None,
                      titleSize=60,
                      labelSize=40,
-                     labelParallel='yes'):
+                     labelParallel='yes',
+                     plotOptions={}):
     """Circos plot
     :param interactions: Data frame with all ligand/receptor interactions, should have a column 'receptor' and a column 'ligand'
     :param target_stats: Data frame with row for every receptor/ligand x cellType combination, should have a column 'target' giving the gene name, 'cellType' with the cell type, columns 'receptor' and 'ligand' that are True/False depending on whether the row represents a ligand or receptor (they can both be True if target is both). Should also have a column for all statistics relevant for plotting (numSigI1_stat, any entry in heatmap_plots or histogram_plots, ligand_deg_logfc_col, ligand_Deg_pval_col).
@@ -1144,7 +1160,8 @@ def make_circos_plot(interactions,
     cols=['cell type', 'target', 'type', ligand_deg_logfc_col, ligand_deg_pval_col, numSigI1_stat]
     target_stats[cols].to_csv(f'{outdir}/circle_plot_tabular.tsv', sep='\t', index=False)
 
-    __make_circos_conf_file(outdir, target_stats, heatmap_plots, histogram_plots, cellType_order, cellType_labels, label_size=labelSize, label_parallel=labelParallel)
+    __make_circos_conf_file(outdir, target_stats, heatmap_plots, histogram_plots, cellType_order, cellType_labels, label_size=labelSize, label_parallel=labelParallel,
+                            plotOptions=plotOptions)
     cmd=f'cd {outdir} && /opt/circos-0.69-9/bin/circos -debug_group textplace -conf circos.conf > circos_stdout.txt 2>&1'
     os.system(cmd)
 
