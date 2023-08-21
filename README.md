@@ -5,7 +5,7 @@
 
 # ContactTracing_tutorial
 
-This repository contains a jupyter notebook and scripts to take you through an example ContactTracing analysis.
+This repository contains a jupyter notebook and scripts to take you through an example ContactTracing analysis,  as described in: Non-cell-autonomous cancer progression from chromosomal instability by Li, J et al , 2023: https://www.nature.com/articles/s41586-023-06464-z.
 
 The code can all be run within a docker image. Commands to get started:
 ```
