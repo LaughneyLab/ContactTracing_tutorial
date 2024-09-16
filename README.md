@@ -5,7 +5,7 @@
 
 # ContactTracing_tutorial
 
-This repository contains a jupyter notebook and scripts to take you through an example ContactTracing analysis.
+This repository contains a jupyter notebook and scripts to take you through an example ContactTracing analysis,  as described in: Non-cell-autonomous cancer progression from chromosomal instability by Li, J et al , 2023: https://www.nature.com/articles/s41586-023-06464-z.
 
 The code can all be run within a docker image. Commands to get started:
 ```
@@ -22,4 +22,6 @@ This should output a container ID (or you can retrieve it with `docker ps`). You
 Use your browser to go to this URL, or you can go to localhost:8888 and enter the token.
 
 Then, open the notebook, which will be stored in `/data/ContactTracing_tutorial/tutorial.ipynb`. You will need input files including an anndata file and an interactions file -- these are described in more detail in the notebook. You can place the files in $WORKDIR on your machine, and they will be found in /data within in the notebook.
+
+A notebook focused on interactive visualization of ContactTracing results can be found here: https://github.com/LaughneyLab/ContactTracing-Viz/blob/master/interactive_notebook.ipynb
 
