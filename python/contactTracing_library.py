@@ -37,7 +37,8 @@ def run_in_background(command, stdoutfile, stderrfile="",
             command = command + ' 2>&1'
         if not wait:
             command = command + ' &'
-        print('calling ' + command + '\n')
+        if not quiet:
+            print('calling ' + command + '\n')
         os.system(command)
     else:
         wait=True
@@ -106,12 +107,13 @@ def makeTransparent(color, alpha):
     return((val[0], val[1], val[2], alpha))
 
             
-def read_mast_results(filename, reverse=False, sortBy='scaled_rank_score', quiet=False):
+def read_mast_results(filename, reverse=False, sortBy='scaled_rank_score', quiet=False, minpval=1e-240):
     """Load results created by R/MAST_wrapper.R
     :param filename: The filename containing the results
     :param reverse: If True, flip direction of fold-change parameters
     :param sortBy: parameter to sort results by, should be a column of the results
     :param quiet: If True, suppress verbose output
+    :param minpval: Any p-value less than this is set to this value
     :return: data frame with columns including gene,log2FC,p,bonferroni,fdr,rank_score,scaled_rank_score
     """
     if not quiet:
@@ -119,13 +121,16 @@ def read_mast_results(filename, reverse=False, sortBy='scaled_rank_score', quiet
     mastResults = pd.read_csv(filename)
     mastResults.rename(index=str, columns={"primerid": "gene", "coef": "log2FC", 'Pr(>Chisq)':'p',
                                           'Pr..Chisq.':'p'}, inplace=True, errors='ignore')
+    mastResults['p'] = mastResults['p'].astype('float')
+    mastResults['log2FC'] = mastResults['log2FC'].astype('float')
+    mastResults['fdr'] = mastResults['fdr'].astype('float')
     #mastResults.log2FC[np.isnan(mastResults.log2FC)] = np.nanmax(mastResults.log2FC)
     mastResults.drop(['Unnamed: 0'], axis=1, inplace=True)
     mastResults.set_index('gene', drop=True, inplace=True)
     mastResults['bonferroni'] = mastResults['p']*mastResults.shape[0]
-    mastResults.loc[mastResults.p==0,'p'] = 1e-240
-    mastResults.loc[mastResults.fdr==0,'fdr'] = 1e-240
-    mastResults.loc[mastResults.bonferroni==0,'bonferroni'] = 1e-240
+    mastResults.loc[mastResults.p < minpval,'p'] = minpval
+    mastResults.loc[mastResults.fdr < minpval,'fdr'] = minpval
+    mastResults.loc[mastResults.bonferroni< minpval,'bonferroni'] = minpval
     mastResults.loc[mastResults.bonferroni > 1,'bonferroni'] = 1
     mastResults['rank_score'] = -10*np.log10(mastResults['bonferroni'])*np.sign(mastResults['log2FC'])
     mastResults['FC'] = 2.0**mastResults['log2FC']
@@ -140,6 +145,119 @@ def read_mast_results(filename, reverse=False, sortBy='scaled_rank_score', quiet
         mastResults['scaled_rank_score'] = -mastResults['scaled_rank_score']
     mastResults = mastResults.sort_values(by=sortBy, ascending=False)
     return(mastResults)
+
+
+
+
+def make_scatter_plot(df,
+                      xcol='log2FC',
+                      ycol='fdr',
+                      label_col='index', 
+                      title='',
+                      xlabel=None,
+                      ylabel=None,
+                      plot_outfile=None, 
+                      max_num_label=15,
+                      arrows=True,
+                      label_pval_cutoff=0.05,
+                      fontsize=12,
+                      s=5, label_filter=None,
+                      label_sort_col='abs_scaled_rank_score',
+                      label_sort_ascending=False, show=True, 
+                      **adjust_text_args):
+    """Scatter plot
+    :param df: pandas dataframe with columns xcol, ycol, label_col, label_sort_col (if not None)
+    :param xcol: column of df to plot along x-axis
+    :param ycol: column of df to plot along y-axis
+    :param label_col: column used for labels ('index' implies df.index)
+    :param title: title for plot
+    :param xlabel: label for x-axis
+    :param ylabel: label for y-axis
+    :param plot_outfile: If not None, will store image in this file
+    :param max_num_label: Maximum number of points on the plot to label
+    :param arrows: True/False whether to draw labels connecting gene names to points
+    :param label_pval_cutoff: Do not label any genes with ycol >= label_pval_cutoff
+    :param fontsize: font size for gene labels
+    :param s: point size
+    :param label_filter: If not None, a list of genes that may be labelled.
+    :param label_sort_col: The column of df used to determine top genes to be labelled
+    :param label_sort_ascending: If False, then genes with highest label_sort_col will be labelled. If True, genes with lowest label_sort_col will be labelled.
+    :param show: If True, call plt.show() at end of function
+    :param adjust_text_args: additional args to pass to adjust_text
+    :return: None
+    """
+
+    print("ycol:", ycol)
+    # Identify significant genes to highlightlabelle
+    
+    x = df[xcol].to_numpy()
+    y = df[ycol].to_numpy()
+
+    if xlabel is None:
+        xlabel=xcol
+    if ylabel is None:
+        ylabel=ycol
+
+    if max_num_label > 0 and not label_sort_col in df.columns:
+        print(f'Warning: {label_sort_col} not found, skipping labels')
+        max_num_label=0
+        
+    if max_num_label > 0:
+        if label_filter is not None:
+            if label_col == 'index':
+                label_filter = list(set(label_filter).intersection(set(df.index)))
+                label_df = df.loc[label_filter].copy()
+            else:
+                label_df = df.loc[df[label_col].isin(label_filter)].copy()
+        else:
+            label_df = df.copy()
+        label_df['x'] = x.copy();
+        label_df['y'] = y.copy()
+        label_df = label_df.sort_values(label_sort_col, ascending=label_sort_ascending)
+        label_df = label_df.loc[label_df[ycol] < label_pval_cutoff]
+        if label_df.shape[0] > max_num_label:
+            label_df = label_df.iloc[:max_num_label]
+        max_num_label = label_df.shape[0]
+        f = [x in label_df.index for x in df.index]
+    else:
+        f = df[ycol] < label_pval_cutoff
+    sig_ind = np.where(f)
+    
+    # Make Volcano plot
+    plt.scatter(x, y, s=s, c='k')
+    plt.scatter(x[sig_ind], y[sig_ind], s=s, c='r')
+    plt.title(title, fontsize=14)
+    plt.rc('xtick', labelsize=14)
+    plt.rc('ytick', labelsize=14)
+    plt.xlabel(xlabel, size=14, weight='normal')
+    plt.ylabel(ylabel, size=14, weight='normal')
+    ax=plt.gca()
+    ax.grid(False)
+    if label_col == 'index':
+        z = sorted(zip(y[f], x[f], df.index[f]), reverse=True)
+    else:
+        z = sorted(zip(y[f], x[f], df[label_col][f]), reverse=True)
+    
+    if max_num_label > 0:
+        texts = []
+        for i in z:
+            texts.append(ax.text(i[1], i[0], i[2], fontsize=fontsize))
+        if (arrows):
+            niter=adjust_text(texts, x=x.copy(), y=y.copy(), 
+                              arrowprops=dict(arrowstyle='-|>', color='gray', lw=0.5),
+                              **adjust_text_args)
+        else:
+            niter = adjust_text(texts, x=x, y=y, force_text=0.05)
+    
+    # SAVE FIGURE
+    if plot_outfile is not None:
+        d = os.path.dirname(plot_outfile)
+        if not os.path.exists(d):
+            os.makedirs(d)
+        plt.savefig(plot_outfile, bbox_inches='tight', dpi=300)
+        print("Wrote " + plot_outfile)
+    if show:
+        plt.show()
 
 
 def make_volcano_plot(df,
@@ -198,8 +316,8 @@ def make_volcano_plot(df,
                 label_df = df.loc[df[label_col].isin(label_filter)].copy()
         else:
             label_df = df.copy()
-        label_df['x'] = x;
-        label_df['y'] = y
+        label_df['x'] = x.copy();
+        label_df['y'] = y.copy()
         label_df = label_df.sort_values(label_sort_col, ascending=label_sort_ascending)
         label_df = label_df.loc[label_df[ycol] < label_pval_cutoff]
         if label_df.shape[0] > max_num_label:
@@ -226,7 +344,6 @@ def make_volcano_plot(df,
 #    sns.despine()
     ax=plt.gca()
     ax.grid(False)
-    
     if label_col == 'index':
         z = sorted(zip(y[f], x[f], df.index[f]), reverse=True)
     else:
@@ -237,12 +354,11 @@ def make_volcano_plot(df,
         for i in z:
             texts.append(ax.text(i[1], i[0], i[2], fontsize=fontsize))
         if (arrows):
-            niter=adjust_text(texts, x=x, y=y, 
+            niter=adjust_text(texts, x=x.copy(), y=y.copy(), 
                               arrowprops=dict(arrowstyle='-|>', color='gray', lw=0.5),
                               **adjust_text_args)
         else:
             niter = adjust_text(texts, x=x, y=y, force_text=0.05)
-
     
     # SAVE FIGURE
     if plot_outfile is not None:
@@ -539,7 +655,7 @@ def gsea_logistic_scale(data: pd.Series) -> pd.Series:
 
     
 def run_gsea(rank, output_root, gmtfile, fdr_cutoff=0.25, label='GSEA run', force=False, wait=False,
-             return_command_only=False, readonly=False, gene_map=None):
+             return_command_only=False, readonly=False, gene_map=None, quiet=False):
     """Run GSEA
     :param rank: pd.Series object with score for each gene
     :param output_root: Directory output
@@ -556,33 +672,38 @@ def run_gsea(rank, output_root, gmtfile, fdr_cutoff=0.25, label='GSEA run', forc
     label = label.replace(" ", "_")
     
     # look to see if output folder already exists
+    f = glob.glob(output_root + "*/**/*gsea_report*pos*tsv", recursive=True)
     if return_command_only and not force:
-        f = glob.glob(output_root + "/**/*gsea_report*pos*tsv", recursive=True)
         if len(f):
             return None
-    if not readonly:
-        Path(output_root).mkdir(parents=True, exist_ok=True)
-    rnkFile=f'{output_root}/input.rnk'
-    if rank is not None:
-        if gene_map is not None:
-            rank = pd.DataFrame(rank)
-            rank['hgene'] = [('' if i.upper() in gene_map.values() else i.upper()) 
-                             if i not in gene_map else gene_map[i] for i in rank.index]
-            droprows = (rank['hgene'] == '')
-            print(f'Dropping {sum(droprows)} results with no human gene mapping')
-            rank = rank.loc[~droprows]
-            rank.set_index('hgene', inplace=True)
-        else:
-            rank.index = [i.upper() for i in rank.index]
-        rank.to_csv(rnkFile, sep='\t', header=False, index=True)
-    cmd=f'/opt/GSEA_Linux_4.3.2/gsea-cli.sh GSEAPreranked -rnk "{rnkFile}" -gmx "{gmtfile}" -collapse No_Collapse -mode Max_probe -norm meandiv'
-    cmd += f' -nperm 10000 -scoring_scheme weighted -rpt_label "{label}" -create_svgs true -include_only_symbols true'
-    cmd += f' -make_sets true -plot_top_x 20 -rnd_seed 888 -set_max 1500 -set_min 1 -zip_report false -out "{output_root}"'
-    if return_command_only:
-        return(cmd)
-    stdoutfile=f'"{output_root}/{label}_stdout.txt"'
-    if not readonly:
-        run_in_background(cmd,f'"{output_root}/{label}_stdout.txt"',  wait=wait, force=force, quiet=True)
+    if force or len(f)==0:
+        if not readonly:
+            Path(output_root).mkdir(parents=True, exist_ok=True)
+        rnkFile=f'{output_root}/input.rnk'
+        if rank is not None:
+            if gene_map is not None:
+                rank = pd.DataFrame(rank)
+                rank['hgene'] = [('' if i.upper() in gene_map.values() else i.upper()) 
+                                 if i not in gene_map else gene_map[i] for i in rank.index]
+                droprows = (rank['hgene'] == '')
+                if not quiet:
+                    print(f'Dropping {sum(droprows)} results with no human gene mapping')
+                rank = rank.loc[~droprows]
+                rank.set_index('hgene', inplace=True)
+            else:
+                rank.index = [i.upper() for i in rank.index]
+            if not readonly:
+                rank.to_csv(rnkFile, sep='\t', header=False, index=True)
+        cmd=f'/opt/GSEA_Linux_4.3.2/gsea-cli.sh GSEAPreranked -rnk "{rnkFile}" -gmx "{gmtfile}" -collapse No_Collapse -mode Max_probe -norm meandiv'
+        cmd += f' -nperm 10000 -scoring_scheme weighted -rpt_label "{label}" -create_svgs true -include_only_symbols true'
+        cmd += f' -make_sets true -plot_top_x 20 -rnd_seed 888 -set_max 1500 -set_min 1 -zip_report false -out "{output_root}"'
+        if return_command_only:
+            return(cmd)
+        stdoutfile=f'"{output_root}/{label}_stdout.txt"'
+        if not readonly:
+            run_in_background(cmd,f'"{output_root}/{label}_stdout.txt"',  wait=wait, force=force, quiet=True)
+        if not wait:
+            return(None)
     # recover information from run
     f = glob.glob(output_root + "/**/*gsea_report*pos*tsv", recursive=True)
     #print(f, output_root + "/**/*gsea_report*pos*tsv")
@@ -596,12 +717,14 @@ def run_gsea(rank, output_root, gmtfile, fdr_cutoff=0.25, label='GSEA run', forc
     if not os.path.exists(f2):
         raise RuntimeError("Error finding neg result file for GSEA " + f2)
     names = ['name', 'size', 'es', 'nes', 'p', 'fdr_q', 'fwer_p', 'rank_at_max', 'leading_edge']
-    print(f'Reading positive GSEA results rom {f}')
+    if not quiet:
+        print(f'Reading positive GSEA results rom {f}')
     pos = pd.read_csv(f, sep='\t', infer_datetime_format=False, parse_dates=False).iloc[:, :-1]
     pos.drop(['GS<br> follow link to MSigDB', 'GS DETAILS'], axis=1, inplace=True)
     
     neg = pd.read_csv(f2, sep='\t', infer_datetime_format=False, parse_dates=False).iloc[:, :-1]
-    print(f'Reading negative GSEA results rom {f2}')
+    if not quiet:
+       print(f'Reading negative GSEA results rom {f2}')
     neg.drop(['GS<br> follow link to MSigDB', 'GS DETAILS'], axis=1, inplace=True)
     pos.columns, neg.columns = names, names
     pos['direction'] = 'pos'
@@ -716,7 +839,7 @@ def plot_gsea_results(gr, fdr_cutoff=0.25, plot_outfile=None, title='', remove_s
 
 def __make_circos_conf_file(outdir, target_stats, heatmap_plots, histogram_plots,
                             cellType_order=[], cellType_labels=True, label_size=40,
-                            label_parallel='yes', plotOptions={}):
+                            label_parallel='yes', gene_label_size=20, plotOptions={}):
 
     f = open(f'{outdir}/circos.conf', 'w')
     cellTypes = target_stats['cell type'].unique()
@@ -823,7 +946,7 @@ def __make_circos_conf_file(outdir, target_stats, heatmap_plots, histogram_plots
     f.write(f'  r0 = {(rstart - width):0.5f}r\n')
     rstart = rstart -  width
     f.write('  label_font = default\n')
-    f.write('  label_size = 20\n')
+    f.write(f'  label_size = {gene_label_size}\n')
     f.write('  show_links = yes\n')
     f.write('  link_dims = 0p,8p,5p,8p,0p\n')
     f.write('  link_thickness = 1p\n')
